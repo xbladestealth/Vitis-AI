@@ -1,146 +1,134 @@
 #!/bin/bash
 # Copyright 2022 Xilinx Inc.
 
+# Function to prompt user for confirmation
 confirm() {
-  echo -en "\n\nDo you agree to the terms and wish to proceed [y/n]? "
+  echo -n "Do you agree to the terms and wish to proceed [y/n]? "
   read REPLY
-  case $REPLY in
+  case "$REPLY" in
     [Yy]) ;;
     [Nn]) exit 0 ;;
     *) confirm ;;
   esac
-    REPLY=''
+  REPLY=""
 }
 
-if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-    echo "Usage: $0 <image>"
-    exit 2
+# Check if running in Bash
+if [ -z "$BASH_VERSION" ]; then
+  echo "Error: This script requires Bash. Run it with 'bash $0'."
+  exit 1
 fi
 
+# Display help message
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+  echo "Usage: $0 <Vitis_AI_DOCKER_NAME> [command]"
+  exit 2
+fi
+
+# Check if image name is provided
 if [ -z "$1" ]; then
-   echo "Usage: $0 <Vitis_AI_DOCKER_NAME>"
-   exit 2
+  echo "Error: Vitis AI Docker image name required"
+  echo "Usage: $0 <Vitis_AI_DOCKER_NAME> [command]"
+  exit 2
 fi
 
+# Get current directory and user details
+HERE=$(pwd -P)  # Absolute path of current directory
+USER=$(whoami)
+UID=$(id -u)
+GID=$(id -g)
 
-HERE=$(pwd -P) # Absolute path of current directory
-user=`whoami`
-uid=`id -u`
-gid=`id -g`
-
+# Define Docker repository and image details
 DOCKER_REPO="xilinx/"
-
-BRAND=vitis-ai
-VERSION=latest
-
-CPU_IMAGE_TAG=${DOCKER_REPO}${BRAND}-cpu:${VERSION}
-GPU_IMAGE_TAG=${DOCKER_REPO}${BRAND}-gpu:${VERSION}
+BRAND="vitis-ai"
+VERSION="latest"
+CPU_IMAGE_TAG="${DOCKER_REPO}${BRAND}-cpu:${VERSION}"
+GPU_IMAGE_TAG="${DOCKER_REPO}${BRAND}-gpu:${VERSION}"
 IMAGE_NAME="$1"
-DEFAULT_COMMAND="bash"
 
-if [[ $# -gt 0 ]]; then
-  shift 1;
-  DEFAULT_COMMAND="$@"
-  if [[ -z "$1" ]]; then
-    DEFAULT_COMMAND="bash"
-  fi
+# Set default command
+shift
+DEFAULT_COMMAND="$*"
+if [ -z "$DEFAULT_COMMAND" ]; then
+  DEFAULT_COMMAND="bash"
 fi
 
+# Set Docker run mode (interactive terminal)
 DETACHED="-it"
 
-xclmgmt_driver="$(find /dev -name xclmgmt\*)"
+# Find and map device files
 docker_devices=""
-for i in ${xclmgmt_driver} ;
-do
-  docker_devices+="--device=$i "
+for dev in /dev/xclmgmt* /dev/dri/renderD* /dev/kfd*; do
+  if [ -e "$dev" ]; then
+    docker_devices="$docker_devices --device=$dev"
+  fi
 done
 
-render_driver="$(find /dev/dri -name renderD\*)"
-for i in ${render_driver} ;
-do
-  docker_devices+="--device=$i "
-done
-
-kfd_driver="$(find /dev -name kfd\*)"
-for i in ${kfd_driver} ;
-do
-    docker_devices+="--device=$i "
-done
-
-DOCKER_RUN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-if [ "$HERE" != "$DOCKER_RUN_DIR" ]; then
-  echo "WARNING: Please start 'docker_run.sh' from the Vitis-AI/ source directory";
+# Check if script is run from the correct directory
+DOCKER_RUN_DIR=$(dirname "$0")
+if [ "$HERE" != "$(cd "$DOCKER_RUN_DIR" && pwd)" ]; then
+  echo "WARNING: Please start 'docker_run.sh' from the Vitis-AI source directory"
 fi
 
-docker_run_params=$(cat <<-END
-    -v /dev/shm:/dev/shm \
-    -v /opt/xilinx/dsa:/opt/xilinx/dsa \
-    -v /opt/xilinx/overlaybins:/opt/xilinx/overlaybins \
-    -e USER=$user -e UID=$uid -e GID=$gid \
-    -v $DOCKER_RUN_DIR:/vitis_ai_home \
-    -v $HERE:/workspace \
-    -w /workspace \
-    --rm \
-    --network=host \
-    ${DETACHED} \
-    ${RUN_MODE} \
-    $IMAGE_NAME \
-    $DEFAULT_COMMAND
-END
-)
+# Define Docker run parameters as a single string
+docker_run_params="-v /dev/shm:/dev/shm \
+  -v /opt/xilinx/dsa:/opt/xilinx/dsa \
+  -v /opt/xilinx/overlaybins:/opt/xilinx/overlaybins \
+  -e USER=$USER -e UID=$UID -e GID=$GID \
+  -v $DOCKER_RUN_DIR:/vitis_ai_home \
+  -v $HERE:/workspace \
+  -w /workspace \
+  --rm \
+  --network=host \
+  $DETACHED"
 
-##############################
+# Display license prompt if .confirm file doesn't exist
+if [ ! -f ".confirm" ]; then
+  if echo "$IMAGE_NAME" | grep -q "gpu"; then
+    arch="gpu"
+  elif echo "$IMAGE_NAME" | grep -q "rocm"; then
+    arch="rocm"
+  else
+    arch="cpu"
+  fi
 
-if [[ ! -f ".confirm" ]]; then
-
-    if [[ $IMAGE_NAME == *"gpu"* ]]; then
-        arch="gpu"
-    elif [[ $IMAGE_NAME == *"rocm"* ]]; then
-        arch='rocm'
-    else
-        arch='cpu'
-    fi
-
-prompt_file="./docker/dockerfiles/PROMPT/PROMPT_${arch}.txt"
-
-  sed -n '1, 5p' $prompt_file
-  read -n 1 -s -r -p "Press any key to continue..." key
-
-  sed -n '5, 15p' $prompt_file
-  read -n 1 -s -r -p "Press any key to continue..." key
-
-  sed -n '15, 28p' $prompt_file
-  read -n 1 -s -r -p "Press any key to continue..." key
-
-  sed -n '28, 61p' $prompt_file
-  read -n 1 -s -r -p "Press any key to continue..." key
-
-  sed -n '62, 224p' $prompt_file
-  read -n 1 -s -r -p "Press any key to continue..." key
-
-  sed -n '224, 308p' $prompt_file
-  read -n 1 -s -r -p "Press any key to continue..." key
-
-  sed -n '309, 520p' $prompt_file
-  read -n 1 -s -r -p "Press any key to continue..." key
-  
-  confirm
+  prompt_file="./docker/dockerfiles/PROMPT/PROMPT_${arch}.txt"
+  if [ -f "$prompt_file" ]; then
+    cat "$prompt_file" | less -P "Press any key to continue..."
+    confirm
+  else
+    echo "Warning: Prompt file $prompt_file not found. Skipping license prompt."
+  fi
+  touch .confirm
 fi
 
-touch .confirm 
-docker pull $IMAGE_NAME 
-if [[ $IMAGE_NAME == *"gpu"* ]]; then
+# Pull the Docker image
+echo "Pulling Docker image: $IMAGE_NAME"
+docker pull "$IMAGE_NAME"
+
+# Run Docker container based on architecture
+if echo "$IMAGE_NAME" | grep -q "gpu"; then
   docker run \
     $docker_devices \
     --gpus all \
-    $docker_run_params
-elif [[ $IMAGE_NAME == *"rocm"* ]]; then
+    $docker_run_params \
+    "$IMAGE_NAME" \
+    "$DEFAULT_COMMAND"
+elif echo "$IMAGE_NAME" | grep -q "rocm"; then
   docker run \
     $docker_devices \
-    --group-add=render --group-add video --ipc=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
-    $docker_run_params
+    --group-add=render \
+    --group-add=video \
+    --ipc=host \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    $docker_run_params \
+    "$IMAGE_NAME" \
+    "$DEFAULT_COMMAND"
 else
   docker run \
     $docker_devices \
-    $docker_run_params
+    $docker_run_params \
+    "$IMAGE_NAME" \
+    "$DEFAULT_COMMAND"
 fi
