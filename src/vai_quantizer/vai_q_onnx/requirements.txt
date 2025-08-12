@@ -1,5 +1,7 @@
-numpy
-onnx>1.12.0
-onnxruntime>=1.14.0
+numpy==1.24.2
+onnx==1.12.0
+onnxruntime==1.14.0
+scipy==1.9.3
+ninja
 onnxruntime_extensions
 protobuf
