@@ -119,7 +119,8 @@ function execute
      --build-arg GIT_HASH=`git rev-parse --short HEAD` \
      --build-arg CACHEBUST=$(date +%s) \
      --build-arg BUILD_DATE=$(date -I) \
-     -f ${DOCKERFILE} -t $IMAGE_TAG ./ "
+     -f ${DOCKERFILE} -t $IMAGE_TAG ./ \
+     --build-context vai_q_onnx=../src/vai_quantizer/vai_q_onnx"
  echo "$buildcmd"
  $buildcmd
  rtn=$?

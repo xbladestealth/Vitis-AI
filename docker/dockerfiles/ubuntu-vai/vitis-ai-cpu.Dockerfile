@@ -1,6 +1,6 @@
 #FROM ubuntu:${UBUNTU_VERSION}
 ARG VAI_BASE=artifactory.xilinx.com/vitis-ai-docker-master-local/vitis-ai-cpu-conda-base:latest                                                                               
-  
+
 From $VAI_BASE
 ARG TARGET_FRAMEWORK
 ENV TARGET_FRAMEWORK=$TARGET_FRAMEWORK
@@ -25,10 +25,21 @@ ENV VAI_WEGO_CONDA_CHANNEL=$VAI_WEGO_CONDA_CHANNEL
 
 
 WORKDIR /workspace
-ADD ./common/ .  
+ADD ./common/ .
 ADD ./conda /scratch
 ADD conda/banner.sh /etc/
 ADD conda/${DOCKER_TYPE}_conda/bashrc /etc/bash.bashrc
-RUN if [[ -n "${TARGET_FRAMEWORK}" ]]; then  bash ./install_${TARGET_FRAMEWORK}.sh; fi
+RUN if [[ -n "${TARGET_FRAMEWORK}" ]]; then bash ./install_${TARGET_FRAMEWORK}.sh; fi
 USER root
-RUN mkdir -p ${VAI_ROOT}/conda/pkgs && chmod 777 ${VAI_ROOT}/conda/pkgs && ./install_vairuntime.sh && rm -fr ./*
+RUN mkdir -p ${VAI_ROOT}/conda/pkgs && chmod 777 ${VAI_ROOT}/conda/pkgs && ./install_vairuntime.sh
+
+COPY --from=vai_q_onnx / ./vai_q_onnx/
+RUN . $VAI_ROOT/conda/etc/profile.d/conda.sh && \
+    conda activate vitis-ai-pytorch && \
+    cd vai_q_onnx/ && \
+    python -m pip install -r requirements.txt && \
+    chmod +x build.sh && \
+    ./build.sh && \
+    pip install pkgs/*.whl
+
+RUN rm -fr ./*
